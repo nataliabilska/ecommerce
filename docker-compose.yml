@@ -16,3 +16,21 @@ services:
       POSTGRES_USER: order_user
       POSTGRES_PASSWORD: order_pass
       POSTGRES_DB: order_db
+
+  payment-db:
+    image: postgres:15-alpine
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: payment_user
+      POSTGRES_PASSWORD: payment_pass
+      POSTGRES_DB: payment_db
+
+  inventory-db:
+    image: postgres:15-alpine
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_USER: inventory_user
+      POSTGRES_PASSWORD: inventory_pass
+      POSTGRES_DB: inventory_db
