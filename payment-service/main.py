@@ -31,14 +31,18 @@ async def startup():
     asyncio.create_task(consume_messages())
 
 async def publish_event(event_name: str, payload: dict):
+    queue_name = {
+        "PaymentProcessed": "inventory_events",
+        "PaymentRefunded": "order_status_events",
+    }[event_name]
     connection = await aio_pika.connect_robust(RABBITMQ_URL)
     async with connection:
         channel = await connection.channel()
-        await channel.declare_queue("order_events", durable=True)
+        await channel.declare_queue(queue_name, durable=True)
         message_body = json.dumps({"event_name": event_name, **payload}).encode()
         await channel.default_exchange.publish(
             aio_pika.Message(body=message_body),
-            routing_key="order_events"
+            routing_key=queue_name
         )
 
 async def process_payment(order_data: dict):
@@ -46,7 +50,10 @@ async def process_payment(order_data: dict):
         new_payment = PaymentDB(order_id=order_data["order_id"], status="PROCESSED")
         session.add(new_payment)
         await session.commit()
-        print(f"Płatność za zamówienie {order_data['order_id']} zaksięgowana!")
+        print(
+            f"Płatność za zamówienie {order_data['order_id']} wstępnie przetworzona; "
+            "oczekiwanie na rezerwację towaru."
+        )
         
         await publish_event("PaymentProcessed", {
             "order_id": order_data["order_id"],
@@ -68,7 +75,7 @@ async def refund_payment(order_id: int):
 async def consume_messages():
     connection = await aio_pika.connect_robust(RABBITMQ_URL)
     channel = await connection.channel()
-    queue = await channel.declare_queue("order_events", durable=True)
+    queue = await channel.declare_queue("payment_events", durable=True)
 
     async with queue.iterator() as queue_iter:
         async for message in queue_iter:

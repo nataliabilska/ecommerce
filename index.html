@@ -20,7 +20,7 @@
             </button>
         </div>
 
-        <div id="status" class="mt-6 text-sm text-gray-600 font-mono bg-gray-50 p-3 rounded-lg min-h-[60px]">
+        <div id="status" class="mt-6 text-sm text-gray-600 font-mono bg-gray-50 p-3 rounded-lg min-h-[60px] whitespace-pre-line">
             Czekam na akcję...
         </div>
     </div>
@@ -28,21 +28,54 @@
     <script>
         const LAPTOP_IP = "192.168.1.11"; 
 
+        const ORDER_SERVICE_URL = `http://${LAPTOP_IP}:8000`;
+        const STATUS_LABELS = {
+            PENDING: "W trakcie przetwarzania...",
+            COMPLETED: "Zamówienie zrealizowane — towar zarezerwowany.",
+            CANCELED: "Zamówienie anulowane — brak towaru, płatność zwrócona."
+        };
+
+        async function refreshOrderStatus(orderId, statusDiv) {
+            for (let attempt = 0; attempt < 30; attempt += 1) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                const response = await fetch(`${ORDER_SERVICE_URL}/orders/${orderId}`);
+                if (!response.ok) {
+                    throw new Error(`Nie udało się pobrać statusu zamówienia (${response.status}).`);
+                }
+
+                const order = await response.json();
+                statusDiv.textContent = `Zamówienie ID: ${order.order_id}\n${STATUS_LABELS[order.status] ?? order.status}`;
+                if (order.status !== "PENDING") {
+                    return;
+                }
+            }
+
+            statusDiv.textContent += "\nZamówienie nadal jest przetwarzane. Odśwież stronę za chwilę.";
+        }
+
         async function placeOrder(quantity) {
             const statusDiv = document.getElementById('status');
-            statusDiv.innerHTML = "Wysyłanie zamówienia...";
+            const buttons = document.querySelectorAll('button');
+            buttons.forEach(button => button.disabled = true);
+            statusDiv.textContent = "Wysyłanie zamówienia...";
             
             try {
-                const response = await fetch(`http://${LAPTOP_IP}:8000/orders`, {
+                const response = await fetch(`${ORDER_SERVICE_URL}/orders`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ product_id: 1, quantity: quantity, user_id: 99 })
                 });
-                
+                if (!response.ok) {
+                    throw new Error(`Nie udało się utworzyć zamówienia (${response.status}).`);
+                }
+
                 const data = await response.json();
-                statusDiv.innerHTML = `Zamówienie ID: ${data.order_id} <br> Status początkowy: ${data.status} <br> <span class="text-xs text-gray-400">Zobacz logi w terminalach!</span>`;
+                statusDiv.textContent = `Zamówienie ID: ${data.order_id}\n${STATUS_LABELS[data.status] ?? data.status}`;
+                await refreshOrderStatus(data.order_id, statusDiv);
             } catch (error) {
-                statusDiv.innerHTML = `Błąd połączenia. Sprawdź IP i zaporę.`;
+                statusDiv.textContent = `Błąd: ${error.message}`;
+            } finally {
+                buttons.forEach(button => button.disabled = false);
             }
         }
     </script>

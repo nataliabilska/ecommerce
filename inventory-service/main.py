@@ -31,20 +31,24 @@ async def startup():
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(ProductDB).where(ProductDB.id == 1))
         if not result.scalar_one_or_none():
-            session.add(ProductDB(id=1, name="Klawiatura Mechaniczna", stock=5))
+            session.add(ProductDB(id=1, name="Klawiatura Mechaniczna", stock=4))
             await session.commit()
             
     asyncio.create_task(consume_messages())
 
 async def publish_event(event_name: str, payload: dict):
+    queue_name = {
+        "InventoryReserved": "order_status_events",
+        "InventoryFailed": "payment_events",
+    }[event_name]
     connection = await aio_pika.connect_robust(RABBITMQ_URL)
     async with connection:
         channel = await connection.channel()
-        await channel.declare_queue("order_events", durable=True)
+        await channel.declare_queue(queue_name, durable=True)
         message_body = json.dumps({"event_name": event_name, **payload}).encode()
         await channel.default_exchange.publish(
             aio_pika.Message(body=message_body),
-            routing_key="order_events"
+            routing_key=queue_name
         )
 
 async def process_inventory(data: dict):
@@ -69,7 +73,7 @@ async def process_inventory(data: dict):
 async def consume_messages():
     connection = await aio_pika.connect_robust(RABBITMQ_URL)
     channel = await connection.channel()
-    queue = await channel.declare_queue("order_events", durable=True)
+    queue = await channel.declare_queue("inventory_events", durable=True)
 
     async with queue.iterator() as queue_iter:
         async for message in queue_iter:
